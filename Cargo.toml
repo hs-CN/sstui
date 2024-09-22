@@ -1,0 +1,11 @@
+[package]
+name = "sstui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.89"
+ratatui = "0.28.1"
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
+ureq = { version = "2.10.1", features = ["json", "socks-proxy"] }
