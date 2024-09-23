@@ -6,7 +6,8 @@ use ratatui::{
 };
 
 #[derive(PartialEq)]
-pub enum MessageBoxState {
+pub enum PopupState {
+    Ok,
     Yes,
     No,
 }
@@ -18,9 +19,9 @@ pub struct MessageBox<'a> {
 }
 
 impl<'a> MessageBox<'a> {
-    pub fn new(tittle: &'a str, content: &'a str) -> Self {
+    pub fn new(title: &'a str, content: &'a str) -> Self {
         Self {
-            title: tittle,
+            title,
             content,
             style: ratatui::style::Style::default(),
         }
@@ -28,7 +29,7 @@ impl<'a> MessageBox<'a> {
 }
 
 impl<'a> StatefulWidget for MessageBox<'a> {
-    type State = MessageBoxState;
+    type State = PopupState;
 
     fn render(
         self,
@@ -46,50 +47,68 @@ impl<'a> StatefulWidget for MessageBox<'a> {
         let [center] = Layout::horizontal([Constraint::Length(line_width + 4)])
             .flex(Flex::Center)
             .areas(center);
+        let bottom = Rect {
+            x: center.x,
+            y: center.bottom() - 1,
+            width: center.width,
+            height: 1,
+        };
         let [bottom_left, bottom_right] =
             Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .flex(Flex::Legacy)
-                .areas(Rect {
-                    x: center.x,
-                    y: center.bottom() - 1,
-                    width: center.width,
-                    height: 1,
-                });
+                .areas(bottom);
 
         // widgets
         let message = Paragraph::new(self.content)
             .set_style(self.style)
             .centered()
             .block(Block::bordered().title(self.title));
-        let (yes, no) = if *state == MessageBoxState::Yes {
-            (
+        Clear.render(center, buf);
+        message.render(center, buf);
+
+        match state {
+            PopupState::Ok => {
+                // <Ok>
+                Paragraph::new(Line::from(vec![
+                    " ".into(),
+                    "<Ok>".white().on_blue(),
+                    " ".into(),
+                ]))
+                .set_style(self.style)
+                .centered()
+                .render(bottom, buf);
+            }
+            PopupState::Yes => {
+                // <Y>
                 Paragraph::new(Line::from(vec![
                     " ".into(),
                     "<Y>".white().on_blue(),
                     " ".into(),
                 ]))
                 .set_style(self.style)
-                .centered(),
-                Paragraph::new(Line::from(" <N> ").set_style(self.style)).centered(),
-            )
-        } else {
-            (
-                Paragraph::new(Line::from(" <Y> ").set_style(self.style)).centered(),
+                .centered()
+                .render(bottom_left, buf);
+                // <N>
+                Paragraph::new(Line::from(" <N> ").set_style(self.style))
+                    .centered()
+                    .render(bottom_right, buf);
+            }
+            PopupState::No => {
+                // <Y>
+                Paragraph::new(Line::from(" <Y> ").set_style(self.style))
+                    .centered()
+                    .render(bottom_left, buf);
+                // <N>
                 Paragraph::new(Line::from(vec![
                     " ".into(),
                     "<N>".white().on_blue(),
                     " ".into(),
                 ]))
                 .set_style(self.style)
-                .centered(),
-            )
-        };
-
-        // render
-        Clear.render(center, buf);
-        message.render(center, buf);
-        yes.render(bottom_left, buf);
-        no.render(bottom_right, buf);
+                .centered()
+                .render(bottom_right, buf);
+            }
+        }
     }
 }
 

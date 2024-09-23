@@ -1,7 +1,7 @@
 use std::{
     env::current_exe,
-    io::Cursor,
-    path::{Path, PathBuf},
+    io::{self, Cursor},
+    path::PathBuf,
 };
 
 use serde::Deserialize;
@@ -13,10 +13,8 @@ pub struct SSLocal {
 }
 
 impl SSLocal {
-    pub fn new<P: AsRef<Path>>(exec_path: P) -> Self {
-        Self {
-            exec_path: exec_path.as_ref().to_path_buf(),
-        }
+    pub fn new(exec_path: PathBuf) -> Self {
+        Self { exec_path }
     }
 }
 
@@ -33,13 +31,27 @@ pub struct Asset {
     pub browser_download_url: String,
 }
 
-const CHECK_URL: &'static str =
-    "https://api.github.com/repos/shadowsocks/shadowsocks-rust/releases/latest";
-
 pub struct SSLocalManager;
+
 impl SSLocalManager {
+    const CHECK_URL: &'static str =
+        "https://api.github.com/repos/shadowsocks/shadowsocks-rust/releases/latest";
+
+    pub fn find_ss_exec_path() -> io::Result<Option<PathBuf>> {
+        let mut dir = current_exe()?;
+        dir.set_file_name("ss");
+        for entry in dir.read_dir()? {
+            let path = entry?;
+            if path.file_type()?.is_file() && path.file_name().to_string_lossy().contains("sslocal")
+            {
+                return Ok(Some(path.path()));
+            }
+        }
+        Ok(None)
+    }
+
     fn _get_latest(agent: ureq::Agent) -> anyhow::Result<LatestRelease> {
-        let mut latest_release: LatestRelease = agent.get(CHECK_URL).call()?.into_json()?;
+        let mut latest_release: LatestRelease = agent.get(Self::CHECK_URL).call()?.into_json()?;
         latest_release.assets = latest_release
             .assets
             .into_iter()
@@ -94,20 +106,20 @@ impl SSLocalManager {
         Self::_download(agent, latest, f)
     }
 
-    pub fn extract_zip(bytes: Vec<u8>) -> anyhow::Result<()> {
+    pub fn extract_zip(bytes: Vec<u8>) -> zip::result::ZipResult<()> {
         let mut zip = ZipArchive::new(Cursor::new(bytes))?;
-        if let Some(dir) = current_exe()?.parent() {
-            zip.extract(dir)?;
-        }
+        let mut dir = current_exe()?;
+        dir.set_file_name("ss");
+        zip.extract(dir)?;
         Ok(())
     }
 
-    pub fn extract_tar_xz(bytes: Vec<u8>) -> anyhow::Result<()> {
+    pub fn extract_tar_xz(bytes: Vec<u8>) -> zip::result::ZipResult<()> {
         let xz = XzDecoder::new(Cursor::new(bytes));
         let mut tar = tar::Archive::new(xz);
-        if let Some(dir) = current_exe()?.parent() {
-            tar.unpack(dir)?;
-        }
+        let mut dir = current_exe()?;
+        dir.set_file_name("ss");
+        tar.unpack(dir)?;
         Ok(())
     }
 }
