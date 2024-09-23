@@ -1,11 +1,12 @@
 use std::{
     env::current_exe,
-    fs,
-    io::Write,
+    io::Cursor,
     path::{Path, PathBuf},
 };
 
 use serde::Deserialize;
+use xz2::read::XzDecoder;
+use zip::ZipArchive;
 
 pub struct SSLocal {
     exec_path: PathBuf,
@@ -37,8 +38,8 @@ const CHECK_URL: &'static str =
 
 pub struct SSLocalManager;
 impl SSLocalManager {
-    pub fn get_latest() -> anyhow::Result<LatestRelease> {
-        let mut latest_release: LatestRelease = ureq::get(CHECK_URL).call()?.into_json()?;
+    fn _get_latest(agent: ureq::Agent) -> anyhow::Result<LatestRelease> {
+        let mut latest_release: LatestRelease = agent.get(CHECK_URL).call()?.into_json()?;
         latest_release.assets = latest_release
             .assets
             .into_iter()
@@ -47,19 +48,23 @@ impl SSLocalManager {
         Ok(latest_release)
     }
 
-    pub fn download<F: Fn(usize), S: AsRef<str>>(
+    pub fn get_latest() -> anyhow::Result<LatestRelease> {
+        let agent = ureq::AgentBuilder::new().build();
+        Self::_get_latest(agent)
+    }
+
+    pub fn get_latest_proxy<P: AsRef<str>>(proxy: P) -> anyhow::Result<LatestRelease> {
+        let proxy = ureq::Proxy::new(proxy)?;
+        let agent = ureq::AgentBuilder::new().proxy(proxy).build();
+        Self::_get_latest(agent)
+    }
+
+    fn _download<F: Fn(usize)>(
+        agent: ureq::Agent,
         latest: &Asset,
-        proxy: Option<S>,
-        f: Option<F>,
-    ) -> anyhow::Result<()> {
-        let mut agent_builder = ureq::AgentBuilder::new();
-        if let Some(proxy_url) = proxy {
-            let proxy = ureq::Proxy::new(proxy_url)?;
-            agent_builder = agent_builder.proxy(proxy);
-        }
-        let agent = agent_builder.build();
+        f: F,
+    ) -> anyhow::Result<Vec<u8>> {
         let response = agent.get(&latest.browser_download_url).call()?;
-        // download to memory
         let mut bytes_reader = response.into_reader();
         let mut bytes: Vec<u8> = Vec::with_capacity(latest.size);
         let mut buf = [0u8; 4096];
@@ -69,15 +74,40 @@ impl SSLocalManager {
                 break;
             }
             bytes.extend_from_slice(&buf[..n]);
-            if let Some(f) = f.as_ref() {
-                f(bytes.len());
-            }
+            f(bytes.len());
         }
-        // write to file
-        let mut file_path = current_exe()?;
-        file_path.set_file_name(latest.name.to_owned());
-        let mut file = fs::File::create(file_path)?;
-        file.write_all(&bytes)?;
+        Ok(bytes)
+    }
+
+    pub fn download<F: Fn(usize)>(latest: &Asset, f: F) -> anyhow::Result<Vec<u8>> {
+        let agent = ureq::AgentBuilder::new().build();
+        Self::_download(agent, latest, f)
+    }
+
+    pub fn download_proxy<F: Fn(usize), P: AsRef<str>>(
+        latest: &Asset,
+        f: F,
+        proxy: P,
+    ) -> anyhow::Result<Vec<u8>> {
+        let proxy = ureq::Proxy::new(proxy)?;
+        let agent = ureq::AgentBuilder::new().proxy(proxy).build();
+        Self::_download(agent, latest, f)
+    }
+
+    pub fn extract_zip(bytes: Vec<u8>) -> anyhow::Result<()> {
+        let mut zip = ZipArchive::new(Cursor::new(bytes))?;
+        if let Some(dir) = current_exe()?.parent() {
+            zip.extract(dir)?;
+        }
+        Ok(())
+    }
+
+    pub fn extract_tar_xz(bytes: Vec<u8>) -> anyhow::Result<()> {
+        let xz = XzDecoder::new(Cursor::new(bytes));
+        let mut tar = tar::Archive::new(xz);
+        if let Some(dir) = current_exe()?.parent() {
+            tar.unpack(dir)?;
+        }
         Ok(())
     }
 }
