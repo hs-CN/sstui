@@ -1,7 +1,6 @@
 mod main_layer;
 pub use main_layer::MainLayer;
 mod sslocal_manager_layer;
-pub use sslocal_manager_layer::SSLocalManagerLayer;
 
 pub trait Layer {
     fn view(&mut self, frame: &mut ratatui::Frame);

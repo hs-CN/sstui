@@ -1,15 +1,49 @@
 use ratatui::{
+    crossterm::event::{Event, KeyCode, KeyEventKind},
     layout::{Constraint, Flex, Layout, Rect},
     style::{Styled, Stylize},
-    text::Line,
     widgets::{Block, Clear, Paragraph, StatefulWidget, Widget},
 };
 
 #[derive(PartialEq)]
 pub enum PopupState {
-    Ok,
     Yes,
     No,
+    Ok,
+    Cancel,
+}
+
+impl PopupState {
+    pub fn update(&mut self, event: &Event) -> bool {
+        if let Event::Key(key_event) = event {
+            if key_event.kind == KeyEventKind::Press {
+                match key_event.code {
+                    KeyCode::Left => {
+                        if *self == PopupState::No {
+                            *self = PopupState::Yes
+                        }
+                        return true;
+                    }
+                    KeyCode::Right => {
+                        if *self == PopupState::Yes {
+                            *self = PopupState::No
+                        }
+                        return true;
+                    }
+                    KeyCode::Tab => {
+                        if *self == PopupState::Yes {
+                            *self = PopupState::No
+                        } else if *self == PopupState::No {
+                            *self = PopupState::Yes
+                        }
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
 }
 
 pub struct MessageBox<'a> {
@@ -40,7 +74,7 @@ impl<'a> StatefulWidget for MessageBox<'a> {
         // layout
         let lines: Vec<&str> = self.content.lines().collect();
         let line_count = lines.len() as u16;
-        let line_width = lines.iter().map(|l| l.len()).max().unwrap() as u16;
+        let line_width = lines.iter().map(|l| l.len()).max().unwrap().max(10) as u16;
         let [center] = Layout::vertical([Constraint::Length(line_count + 2)])
             .flex(Flex::Center)
             .areas(area);
@@ -67,46 +101,41 @@ impl<'a> StatefulWidget for MessageBox<'a> {
         message.render(center, buf);
 
         match state {
-            PopupState::Ok => {
-                // <Ok>
-                Paragraph::new(Line::from(vec![
-                    " ".into(),
-                    "<Ok>".white().on_blue(),
-                    " ".into(),
-                ]))
-                .set_style(self.style)
-                .centered()
-                .render(bottom, buf);
-            }
             PopupState::Yes => {
-                // <Y>
-                Paragraph::new(Line::from(vec![
-                    " ".into(),
-                    "<Y>".white().on_blue(),
-                    " ".into(),
-                ]))
-                .set_style(self.style)
-                .centered()
-                .render(bottom_left, buf);
-                // <N>
-                Paragraph::new(Line::from(" <N> ").set_style(self.style))
+                // [Y]
+                Paragraph::new("[Y]".white().on_blue())
+                    .set_style(self.style)
+                    .centered()
+                    .render(bottom_left, buf);
+                // [N]
+                Paragraph::new("[N]".set_style(self.style))
                     .centered()
                     .render(bottom_right, buf);
             }
             PopupState::No => {
-                // <Y>
-                Paragraph::new(Line::from(" <Y> ").set_style(self.style))
+                // [Y]
+                Paragraph::new("[Y]".set_style(self.style))
                     .centered()
                     .render(bottom_left, buf);
-                // <N>
-                Paragraph::new(Line::from(vec![
-                    " ".into(),
-                    "<N>".white().on_blue(),
-                    " ".into(),
-                ]))
-                .set_style(self.style)
-                .centered()
-                .render(bottom_right, buf);
+                // [N]
+                Paragraph::new("[N]".white().on_blue())
+                    .set_style(self.style)
+                    .centered()
+                    .render(bottom_right, buf);
+            }
+            PopupState::Ok => {
+                // [Ok]
+                Paragraph::new("[Ok]".white().on_blue())
+                    .set_style(self.style)
+                    .centered()
+                    .render(bottom, buf);
+            }
+            PopupState::Cancel => {
+                // [Cancel]
+                Paragraph::new("[Cancel]".white().on_blue())
+                    .set_style(self.style)
+                    .centered()
+                    .render(bottom, buf);
             }
         }
     }

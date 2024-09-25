@@ -1,2 +1,2 @@
-mod message_box;
-pub use message_box::{MessageBox, PopupState};
+mod popup;
+pub use popup::{MessageBox, PopupState};

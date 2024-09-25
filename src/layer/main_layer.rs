@@ -12,14 +12,13 @@ use crate::{
     Layer, SSLocal, SSLocalManager, UserData,
 };
 
-use super::SSLocalManagerLayer;
-
 #[derive(PartialEq)]
 enum Popup {
-    Exit,
     Info(String),
     Error(String),
+    Exit,
     SSLocalNotFound,
+    SSLocalCheckUpdate,
     SSLocalNewVersion(String),
 }
 
@@ -85,6 +84,11 @@ impl Layer for MainLayer {
                     let popup = MessageBox::new("Info", info).green().on_gray();
                     frame.render_stateful_widget(popup, frame.area(), state);
                 }
+                Popup::SSLocalCheckUpdate => {
+                    let info = "check for latest version now...";
+                    let popup = MessageBox::new("Info", info).green().on_gray();
+                    frame.render_stateful_widget(popup, frame.area(), state);
+                }
                 Popup::SSLocalNewVersion(ref info) => {
                     let popup = MessageBox::new("Info", info).green().on_gray();
                     frame.render_stateful_widget(popup, frame.area(), state);
@@ -95,42 +99,38 @@ impl Layer for MainLayer {
 
     fn update(&mut self, event: ratatui::crossterm::event::Event) {
         if let Some((popup, state)) = self.popup.last_mut() {
-            if let Event::Key(key_event) = event {
-                if key_event.kind == KeyEventKind::Press {
-                    match key_event.code {
-                        KeyCode::Esc => drop(self.popup.pop()),
-                        KeyCode::Left => {
-                            if *state == PopupState::No {
-                                *state = PopupState::Yes
-                            }
-                        }
-                        KeyCode::Right => {
-                            if *state == PopupState::Yes {
-                                *state = PopupState::No
-                            }
-                        }
-                        KeyCode::Tab => {
-                            if *state == PopupState::Yes {
-                                *state = PopupState::No
-                            } else if *state == PopupState::No {
-                                *state = PopupState::Yes
-                            }
-                        }
-                        KeyCode::Enter => {
-                            if *state == PopupState::Yes {
-                                match popup {
-                                    Popup::Exit => self.exit = true,
-                                    Popup::Info(_) => {}
-                                    Popup::Error(_) => {}
-                                    Popup::SSLocalNotFound => {
-                                        self.next_layer = Some(Box::new(SSLocalManagerLayer::new()))
+            if !state.update(&event) {
+                if let Event::Key(key_event) = event {
+                    if key_event.kind == KeyEventKind::Press {
+                        match key_event.code {
+                            KeyCode::Esc => drop(self.popup.pop()),
+                            KeyCode::Enter => {
+                                if *state == PopupState::Yes {
+                                    match popup {
+                                        Popup::Info(_) => drop(self.popup.pop()),
+                                        Popup::Error(_) => drop(self.popup.pop()),
+                                        Popup::Exit => {
+                                            self.popup.pop();
+                                            self.exit = true;
+                                        }
+                                        Popup::SSLocalNotFound => {
+                                            self.popup.pop();
+                                            self.popup.push((
+                                                Popup::SSLocalCheckUpdate,
+                                                PopupState::Cancel,
+                                            ));
+                                        }
+                                        Popup::SSLocalCheckUpdate => {
+                                            self.popup.pop();
+                                        }
+                                        Popup::SSLocalNewVersion(_) => todo!(),
                                     }
-                                    Popup::SSLocalNewVersion(_) => todo!(),
+                                } else {
+                                    self.popup.pop();
                                 }
                             }
-                            self.popup.pop();
+                            _ => {}
                         }
-                        _ => {}
                     }
                 }
             }
