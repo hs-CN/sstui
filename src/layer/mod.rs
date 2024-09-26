@@ -1,18 +1,20 @@
 mod main_layer;
-pub use main_layer::MainLayer;
-mod sslocal_manager_layer;
+use std::sync::{Arc, RwLock};
 
-pub trait Layer {
+pub use main_layer::MainLayer;
+
+mod messagebox_layer;
+
+static LAYER_STACK: RwLock<Vec<Arc<RwLock<dyn Layer>>>> = RwLock::new(Vec::new());
+
+pub trait Layer: Send + Sync {
     fn view(&mut self, frame: &mut ratatui::Frame);
     fn update(&mut self, event: ratatui::crossterm::event::Event);
-    fn next_layer(&mut self) -> Option<Box<dyn Layer>>;
+    fn is_transparent(&self) -> bool;
     fn exit(&self) -> bool;
 }
 
-pub struct AppBuilder {
-    terminal: ratatui::DefaultTerminal,
-    layer_stack: Vec<Box<dyn Layer>>,
-}
+pub struct AppBuilder(ratatui::DefaultTerminal);
 
 impl Default for AppBuilder {
     fn default() -> Self {
@@ -22,39 +24,50 @@ impl Default for AppBuilder {
 
 impl AppBuilder {
     pub fn new(terminal: ratatui::DefaultTerminal) -> Self {
-        Self {
-            terminal,
-            layer_stack: Vec::new(),
-        }
+        Self(terminal)
     }
 
-    pub fn show(mut self, layer: impl Layer + 'static) -> App {
-        self.layer_stack.push(Box::new(layer));
-        App {
-            terminal: self.terminal,
-            layer_stack: self.layer_stack,
-        }
+    pub fn show(self, layer: impl Layer + 'static) -> Self {
+        show(layer);
+        self
     }
-}
 
-pub struct App {
-    terminal: ratatui::DefaultTerminal,
-    layer_stack: Vec<Box<dyn Layer>>,
-}
+    pub fn run(self) -> std::io::Result<()> {
+        let mut terminal = self.0;
+        loop {
+            let top_layer = {
+                let stack = LAYER_STACK.read().unwrap();
+                if stack.is_empty() {
+                    break;
+                }
+                let end_index = stack.len() - 1;
+                let mut start_index = end_index;
+                while start_index > 0 && stack[start_index].read().unwrap().is_transparent() {
+                    start_index -= 1;
+                }
+                terminal.draw(|frame| {
+                    for i in start_index..=end_index {
+                        stack[i].write().unwrap().view(frame);
+                    }
+                })?;
+                LAYER_STACK.read().unwrap()[end_index].clone()
+            };
 
-impl App {
-    pub fn run(&mut self) -> std::io::Result<()> {
-        while let Some(layer) = self.layer_stack.last_mut() {
-            self.terminal.draw(|frame| layer.view(frame))?;
-            layer.update(ratatui::crossterm::event::read()?);
-            let next_layer = layer.next_layer();
-            if layer.exit() {
-                self.layer_stack.pop();
-            }
-            if let Some(next_layer) = next_layer {
-                self.layer_stack.push(next_layer);
+            top_layer
+                .write()
+                .unwrap()
+                .update(ratatui::crossterm::event::read()?);
+
+            if top_layer.read().unwrap().exit() {
+                LAYER_STACK.write().unwrap().pop();
             }
         }
         Ok(())
     }
+}
+
+pub fn show(layer: impl Layer + 'static) -> Arc<RwLock<dyn Layer>> {
+    let layer = Arc::new(RwLock::new(layer));
+    LAYER_STACK.write().unwrap().push(layer.clone());
+    layer
 }

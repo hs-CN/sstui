@@ -1,4 +1,8 @@
-use std::{io, path::Path};
+use std::{
+    io,
+    path::Path,
+    sync::{Arc, RwLock},
+};
 
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -7,32 +11,18 @@ use ratatui::{
     widgets::Block,
 };
 
-use crate::{
-    widgets::{MessageBox, PopupState},
-    Layer, SSLocal, SSLocalManager, UserData,
-};
+use crate::{Layer, SSLocal, SSLocalManager, UserData};
 
-#[derive(PartialEq)]
-enum Popup {
-    Info(String),
-    Error(String),
-    Exit,
-    SSLocalNotFound,
-    SSLocalCheckUpdate,
-    SSLocalNewVersion(String),
-}
+use super::{messagebox_layer::MessageBoxLayer, show};
 
 pub struct MainLayer {
-    exit: bool,
-    next_layer: Option<Box<dyn Layer>>,
+    exit: Arc<RwLock<bool>>,
     userdata: UserData,
     sslocal: Option<SSLocal>,
-    popup: Vec<(Popup, PopupState)>,
 }
 
 impl MainLayer {
     pub fn new() -> io::Result<Self> {
-        let mut popup = Vec::new();
         let userdata = UserData::load().unwrap_or_default();
         let path = Path::new(&userdata.sslocal_exec_path);
         let sslocal = if path.exists() {
@@ -40,16 +30,13 @@ impl MainLayer {
         } else if let Ok(Some(path)) = SSLocalManager::find_ss_exec_path() {
             Some(SSLocal::new(path))
         } else {
-            popup.push((Popup::SSLocalNotFound, PopupState::No));
             None
         };
 
         Ok(Self {
-            exit: false,
-            next_layer: None,
+            exit: Arc::new(RwLock::new(false)),
             userdata,
             sslocal,
-            popup,
         })
     }
 }
@@ -63,95 +50,49 @@ impl Layer for MainLayer {
         let log_block = Block::bordered().title("log");
         frame.render_widget(main_block, main);
         frame.render_widget(log_block, log);
-
-        if let Some((popup, state)) = self.popup.last_mut() {
-            match popup {
-                Popup::Exit => {
-                    let info = "exit now?";
-                    let popup = MessageBox::new("Info", info).green().on_gray();
-                    frame.render_stateful_widget(popup, frame.area(), state);
-                }
-                Popup::Info(ref info) => {
-                    let popup = MessageBox::new("Info", info).green().on_gray();
-                    frame.render_stateful_widget(popup, frame.area(), state);
-                }
-                Popup::Error(ref err) => {
-                    let popup = MessageBox::new("Error", err).red().on_gray();
-                    frame.render_stateful_widget(popup, frame.area(), state);
-                }
-                Popup::SSLocalNotFound => {
-                    let info = "sslocal not found, download it?";
-                    let popup = MessageBox::new("Info", info).green().on_gray();
-                    frame.render_stateful_widget(popup, frame.area(), state);
-                }
-                Popup::SSLocalCheckUpdate => {
-                    let info = "check for latest version now...";
-                    let popup = MessageBox::new("Info", info).green().on_gray();
-                    frame.render_stateful_widget(popup, frame.area(), state);
-                }
-                Popup::SSLocalNewVersion(ref info) => {
-                    let popup = MessageBox::new("Info", info).green().on_gray();
-                    frame.render_stateful_widget(popup, frame.area(), state);
-                }
-            }
-        };
     }
 
     fn update(&mut self, event: ratatui::crossterm::event::Event) {
-        if let Some((popup, state)) = self.popup.last_mut() {
-            if !state.update(&event) {
-                if let Event::Key(key_event) = event {
-                    if key_event.kind == KeyEventKind::Press {
-                        match key_event.code {
-                            KeyCode::Esc => drop(self.popup.pop()),
-                            KeyCode::Enter => {
-                                if *state == PopupState::Yes {
-                                    match popup {
-                                        Popup::Info(_) => drop(self.popup.pop()),
-                                        Popup::Error(_) => drop(self.popup.pop()),
-                                        Popup::Exit => {
-                                            self.popup.pop();
-                                            self.exit = true;
-                                        }
-                                        Popup::SSLocalNotFound => {
-                                            self.popup.pop();
-                                            self.popup.push((
-                                                Popup::SSLocalCheckUpdate,
-                                                PopupState::Cancel,
-                                            ));
-                                        }
-                                        Popup::SSLocalCheckUpdate => {
-                                            self.popup.pop();
-                                        }
-                                        Popup::SSLocalNewVersion(_) => todo!(),
-                                    }
-                                } else {
-                                    self.popup.pop();
-                                }
-                            }
-                            _ => {}
-                        }
+        if let Event::Key(key_event) = event {
+            if key_event.kind == KeyEventKind::Press {
+                match key_event.code {
+                    KeyCode::Char('q') => {
+                        let exit = self.exit.clone();
+                        show(
+                            MessageBoxLayer::yes_or_no(
+                                "Info",
+                                "exit?",
+                                Some(move || *exit.write().unwrap() = true),
+                                None,
+                            )
+                            .green()
+                            .on_gray(),
+                        );
                     }
-                }
-            }
-        } else {
-            if let Event::Key(key_event) = event {
-                if key_event.kind == KeyEventKind::Press {
-                    match key_event.code {
-                        KeyCode::Char('q') => self.popup.push((Popup::Exit, PopupState::No)),
-                        KeyCode::Esc => self.popup.push((Popup::Exit, PopupState::No)),
-                        _ => {}
+                    KeyCode::Esc => {
+                        let exit = self.exit.clone();
+                        show(
+                            MessageBoxLayer::yes_or_no(
+                                "Info",
+                                "exit?",
+                                Some(move || *exit.write().unwrap() = true),
+                                None,
+                            )
+                            .green()
+                            .on_gray(),
+                        );
                     }
+                    _ => {}
                 }
             }
         }
     }
 
-    fn next_layer(&mut self) -> Option<Box<dyn Layer>> {
-        self.next_layer.take()
+    fn is_transparent(&self) -> bool {
+        false
     }
 
     fn exit(&self) -> bool {
-        self.exit
+        *self.exit.read().unwrap()
     }
 }
