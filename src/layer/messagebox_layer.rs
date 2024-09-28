@@ -8,78 +8,88 @@ use ratatui::{
 use super::Layer;
 
 #[derive(PartialEq)]
-enum MessageBoxType {
+pub enum MessageBoxResult {
+    Yes,
+    No,
+    None,
+    Ok,
+    Cancel,
+}
+
+impl MessageBoxResult {
+    #[inline]
+    pub fn is_yes(&self) -> bool {
+        *self == MessageBoxResult::Yes
+    }
+
+    #[inline]
+    pub fn is_no(&self) -> bool {
+        *self == MessageBoxResult::No
+    }
+
+    #[inline]
+    pub fn is_ok(&self) -> bool {
+        *self == MessageBoxResult::Ok
+    }
+
+    #[inline]
+    pub fn is_cancel(&self) -> bool {
+        *self == MessageBoxResult::Cancel
+    }
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum Type {
     YesOrNo,
     Ok,
     Cancel,
 }
 
-pub struct MessageBoxLayer<F: FnOnce() + Send + Sync + 'static> {
-    type_: MessageBoxType,
+pub struct MessageBoxLayer {
+    style: Style,
+    type_: Type,
     title: String,
     message: String,
     exit: bool,
-    style: Style,
-    on_yes: Option<F>,
-    on_no: Option<F>,
-    on_ok: Option<F>,
-    on_cancel: Option<F>,
-    yes: bool,
+    pub result: MessageBoxResult,
 }
 
-impl<F: FnOnce() + Send + Sync + 'static> MessageBoxLayer<F> {
-    pub fn yes_or_no<S: Into<String>>(
-        title: S,
-        message: S,
-        on_yes: Option<F>,
-        on_no: Option<F>,
-    ) -> Self {
+impl MessageBoxLayer {
+    pub fn yes_or_no<S: Into<String>>(title: S, message: S) -> Self {
         Self {
-            type_: MessageBoxType::YesOrNo,
+            style: Style::default(),
+            type_: Type::YesOrNo,
             title: title.into(),
             message: message.into(),
             exit: false,
-            style: Style::default(),
-            on_yes,
-            on_no,
-            on_ok: None,
-            on_cancel: None,
-            yes: false,
+            result: MessageBoxResult::No,
         }
     }
 
-    pub fn ok<S: Into<String>>(title: S, message: S, on_ok: Option<F>) -> Self {
+    pub fn ok<S: Into<String>>(title: S, message: S) -> Self {
         Self {
-            type_: MessageBoxType::Ok,
+            style: Style::default(),
+            type_: Type::Ok,
             title: title.into(),
             message: message.into(),
             exit: false,
-            style: Style::default(),
-            on_yes: None,
-            on_no: None,
-            on_ok,
-            on_cancel: None,
-            yes: false,
+            result: MessageBoxResult::Ok,
         }
     }
 
-    pub fn cancel<S: Into<String>>(title: S, message: S, on_cancel: Option<F>) -> Self {
+    pub fn cancel<S: Into<String>>(title: S, message: S) -> Self {
         Self {
-            type_: MessageBoxType::Cancel,
+            style: Style::default(),
+            type_: Type::Cancel,
             title: title.into(),
             message: message.into(),
             exit: false,
-            style: Style::default(),
-            on_yes: None,
-            on_no: None,
-            on_ok: None,
-            on_cancel,
-            yes: false,
+            result: MessageBoxResult::Cancel,
         }
     }
 }
 
-impl<F: FnOnce() + Send + Sync + 'static> Layer for MessageBoxLayer<F> {
+impl Layer for MessageBoxLayer {
     fn view(&mut self, frame: &mut ratatui::Frame) {
         let lines: Vec<&str> = self.message.lines().collect();
         let line_count = lines.len() as u16;
@@ -105,12 +115,12 @@ impl<F: FnOnce() + Send + Sync + 'static> Layer for MessageBoxLayer<F> {
         frame.render_widget(message, center);
 
         match self.type_ {
-            MessageBoxType::YesOrNo => {
+            Type::YesOrNo => {
                 let [bottom_left, bottom_right] =
                     Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
                         .flex(Flex::Legacy)
                         .areas(bottom);
-                if self.yes {
+                if self.result.is_yes() {
                     let yes = Paragraph::new("[Y]".white().on_blue())
                         .set_style(self.style)
                         .centered();
@@ -126,13 +136,13 @@ impl<F: FnOnce() + Send + Sync + 'static> Layer for MessageBoxLayer<F> {
                     frame.render_widget(no, bottom_right);
                 }
             }
-            MessageBoxType::Ok => {
+            Type::Ok => {
                 let ok = Paragraph::new("[Ok]".white().on_blue())
                     .set_style(self.style)
                     .centered();
                 frame.render_widget(ok, bottom);
             }
-            MessageBoxType::Cancel => {
+            Type::Cancel => {
                 let cancel = Paragraph::new("[Cancel]".white().on_blue())
                     .set_style(self.style)
                     .centered();
@@ -144,54 +154,39 @@ impl<F: FnOnce() + Send + Sync + 'static> Layer for MessageBoxLayer<F> {
     fn update(&mut self, event: Event) {
         if let Event::Key(key_event) = event {
             if key_event.kind == KeyEventKind::Press {
-                if self.type_ == MessageBoxType::YesOrNo {
-                    match key_event.code {
-                        KeyCode::Left => self.yes = true,
-                        KeyCode::Right => self.yes = false,
-                        KeyCode::Tab => self.yes = !self.yes,
-                        KeyCode::Esc => self.exit = true,
-                        KeyCode::Enter => {
-                            if self.yes {
-                                if let Some(f) = self.on_yes.take() {
-                                    f();
-                                }
-                            } else {
-                                if let Some(f) = self.on_no.take() {
-                                    f();
-                                }
-                            }
-                            self.exit = true;
+                match (self.type_, key_event.code) {
+                    (Type::YesOrNo, KeyCode::Left) => self.result = MessageBoxResult::Yes,
+                    (Type::YesOrNo, KeyCode::Right) => self.result = MessageBoxResult::No,
+                    (Type::YesOrNo, KeyCode::Tab) => {
+                        self.result = if self.result.is_yes() {
+                            MessageBoxResult::No
+                        } else {
+                            MessageBoxResult::Yes
                         }
-                        _ => {}
                     }
-                } else {
-                    match key_event.code {
-                        KeyCode::Esc => self.exit = true,
-                        KeyCode::Enter => {
-                            if let Some(f) = self.on_ok.take() {
-                                f();
-                            } else if let Some(f) = self.on_cancel.take() {
-                                f();
-                            }
-                            self.exit = true;
-                        }
-                        _ => {}
+                    (Type::YesOrNo, KeyCode::Enter) => self.exit = true,
+                    (Type::Ok, KeyCode::Enter) => self.exit = true,
+                    (Type::Cancel, KeyCode::Enter) => self.exit = true,
+                    (_, KeyCode::Esc) => {
+                        self.result = MessageBoxResult::None;
+                        self.exit = true;
                     }
+                    _ => {}
                 }
             }
         }
     }
 
-    fn is_transparent(&self) -> bool {
-        true
+    fn is_exit(&self) -> bool {
+        self.exit
     }
 
-    fn exit(&self) -> bool {
-        self.exit
+    fn close(&mut self) {
+        self.exit = true
     }
 }
 
-impl<F: FnOnce() + Send + Sync + 'static> Styled for MessageBoxLayer<F> {
+impl Styled for MessageBoxLayer {
     type Item = Self;
 
     fn style(&self) -> Style {

@@ -52,11 +52,9 @@ impl SSLocalManager {
 
     fn _get_latest(agent: ureq::Agent) -> anyhow::Result<LatestRelease> {
         let mut latest_release: LatestRelease = agent.get(Self::CHECK_URL).call()?.into_json()?;
-        latest_release.assets = latest_release
+        latest_release
             .assets
-            .into_iter()
-            .filter(|asset| !asset.name.ends_with(".sha256"))
-            .collect();
+            .retain(|asset| !asset.name.ends_with(".sha256"));
         Ok(latest_release)
     }
 

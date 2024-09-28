@@ -1,8 +1,4 @@
-use std::{
-    io,
-    path::Path,
-    sync::{Arc, RwLock},
-};
+use std::path::Path;
 
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -11,18 +7,17 @@ use ratatui::{
     widgets::Block,
 };
 
+use super::messagebox_layer::MessageBoxLayer;
 use crate::{Layer, SSLocal, SSLocalManager, UserData};
 
-use super::{messagebox_layer::MessageBoxLayer, show};
-
 pub struct MainLayer {
-    exit: Arc<RwLock<bool>>,
+    exit: bool,
     userdata: UserData,
     sslocal: Option<SSLocal>,
 }
 
 impl MainLayer {
-    pub fn new() -> io::Result<Self> {
+    pub fn new() -> Self {
         let userdata = UserData::load().unwrap_or_default();
         let path = Path::new(&userdata.sslocal_exec_path);
         let sslocal = if path.exists() {
@@ -33,11 +28,11 @@ impl MainLayer {
             None
         };
 
-        Ok(Self {
-            exit: Arc::new(RwLock::new(false)),
+        Self {
+            exit: false,
             userdata,
             sslocal,
-        })
+        }
     }
 }
 
@@ -57,30 +52,22 @@ impl Layer for MainLayer {
             if key_event.kind == KeyEventKind::Press {
                 match key_event.code {
                     KeyCode::Char('q') => {
-                        let exit = self.exit.clone();
-                        show(
-                            MessageBoxLayer::yes_or_no(
-                                "Info",
-                                "exit?",
-                                Some(move || *exit.write().unwrap() = true),
-                                None,
-                            )
+                        let msg = MessageBoxLayer::yes_or_no("Info", "exit?")
                             .green()
-                            .on_gray(),
-                        );
+                            .on_gray()
+                            .show();
+                        if let Ok(msg) = msg {
+                            self.exit = msg.result.is_yes();
+                        }
                     }
                     KeyCode::Esc => {
-                        let exit = self.exit.clone();
-                        show(
-                            MessageBoxLayer::yes_or_no(
-                                "Info",
-                                "exit?",
-                                Some(move || *exit.write().unwrap() = true),
-                                None,
-                            )
+                        let msg = MessageBoxLayer::yes_or_no("Info", "exit?")
                             .green()
-                            .on_gray(),
-                        );
+                            .on_gray()
+                            .show();
+                        if let Ok(msg) = msg {
+                            self.exit = msg.result.is_yes();
+                        }
                     }
                     _ => {}
                 }
@@ -88,11 +75,11 @@ impl Layer for MainLayer {
         }
     }
 
-    fn is_transparent(&self) -> bool {
-        false
+    fn is_exit(&self) -> bool {
+        self.exit
     }
 
-    fn exit(&self) -> bool {
-        *self.exit.read().unwrap()
+    fn close(&mut self) {
+        self.exit = true;
     }
 }

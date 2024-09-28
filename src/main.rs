@@ -1,9 +1,7 @@
-use sstui::{AppBuilder, MainLayer};
-use std::io;
+use sstui::{terminal_init_default, Layer, MainLayer};
 
-fn main() -> io::Result<()> {
-    let main_layer = MainLayer::new()?;
-    let result = AppBuilder::default().show(main_layer).run();
+fn main() {
+    terminal_init_default().unwrap();
+    let _ = MainLayer::new().show();
     ratatui::restore();
-    result
 }
