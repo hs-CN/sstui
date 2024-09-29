@@ -11,7 +11,7 @@ use super::messagebox::{
     CancelableMessageBoxLayer, CancelableMessageBoxResult, MessageBoxLayer, YesNoMessageBoxLayer,
     YesNoMessageBoxResult,
 };
-use crate::{Layer, SSLocal, SSLocalManager, UserData};
+use crate::{Layer, SSLocal, SSLocalManager, Show, UserData};
 
 pub struct MainLayer {
     exit: bool,

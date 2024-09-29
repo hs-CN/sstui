@@ -5,7 +5,6 @@ pub use main::MainLayer;
 
 use ratatui::crossterm::event::{poll, read, Event};
 use std::{
-    ops::Deref,
     sync::{Arc, OnceLock, RwLock},
     time::Duration,
 };
@@ -18,16 +17,22 @@ pub trait Layer {
     fn update(&mut self, event: Option<Event>) -> std::io::Result<()>;
     fn close(&mut self);
     fn is_exit(&self) -> bool;
-    fn thread_safe(self) -> ThreadSafeLayer<Self>
+    fn thread_safe(self) -> Arc<RwLock<Self>>
     where
         Self: Sized,
     {
-        ThreadSafeLayer(Arc::new(RwLock::new(self)))
+        Arc::new(RwLock::new(self))
     }
-    fn show(mut self) -> std::io::Result<Self>
+}
+
+pub trait Show {
+    fn show(self) -> std::io::Result<Self>
     where
-        Self: Sized,
-    {
+        Self: Sized;
+}
+
+impl<L: Layer> Show for L {
+    fn show(mut self) -> std::io::Result<Self> {
         self.before_show()?;
         while !self.is_exit() {
             TERMINAL
@@ -46,39 +51,23 @@ pub trait Layer {
     }
 }
 
-pub struct ThreadSafeLayer<L: Layer>(Arc<RwLock<L>>);
-
-impl<L: Layer> ThreadSafeLayer<L> {
-    pub fn show(self) -> std::io::Result<Self> {
-        self.0.write().unwrap().before_show()?;
-        while !self.0.read().unwrap().is_exit() {
+impl<L: Layer> Show for Arc<RwLock<L>> {
+    fn show(self) -> std::io::Result<Self> {
+        self.write().unwrap().before_show()?;
+        while !self.read().unwrap().is_exit() {
             TERMINAL
                 .get()
                 .unwrap()
                 .write()
                 .unwrap()
-                .draw(|frame| self.0.write().unwrap().view(frame))?;
+                .draw(|frame| self.write().unwrap().view(frame))?;
             if poll(Duration::from_millis(10))? {
-                self.0.write().unwrap().update(Some(read()?))?;
+                self.write().unwrap().update(Some(read()?))?;
             } else {
-                self.0.write().unwrap().update(None)?;
+                self.write().unwrap().update(None)?;
             }
         }
         Ok(self)
-    }
-}
-
-impl<L: Layer> Deref for ThreadSafeLayer<L> {
-    type Target = Arc<RwLock<L>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<L: Layer> Clone for ThreadSafeLayer<L> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
     }
 }
 
