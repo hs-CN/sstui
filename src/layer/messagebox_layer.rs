@@ -1,3 +1,5 @@
+use std::io;
+
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     layout::{Constraint, Flex, Layout, Rect},
@@ -55,7 +57,7 @@ pub struct MessageBoxLayer {
 }
 
 impl MessageBoxLayer {
-    pub fn yes_or_no<S: Into<String>>(title: S, message: S) -> Self {
+    pub fn yes_or_no<T: Into<String>, M: Into<String>>(title: T, message: M) -> Self {
         Self {
             style: Style::default(),
             type_: Type::YesOrNo,
@@ -66,7 +68,7 @@ impl MessageBoxLayer {
         }
     }
 
-    pub fn ok<S: Into<String>>(title: S, message: S) -> Self {
+    pub fn ok<T: Into<String>, M: Into<String>>(title: T, message: M) -> Self {
         Self {
             style: Style::default(),
             type_: Type::Ok,
@@ -77,14 +79,14 @@ impl MessageBoxLayer {
         }
     }
 
-    pub fn cancel<S: Into<String>>(title: S, message: S) -> Self {
+    pub fn cancel<T: Into<String>, M: Into<String>>(title: T, message: M) -> Self {
         Self {
             style: Style::default(),
             type_: Type::Cancel,
             title: title.into(),
             message: message.into(),
             exit: false,
-            result: MessageBoxResult::Cancel,
+            result: MessageBoxResult::None,
         }
     }
 }
@@ -151,7 +153,11 @@ impl Layer for MessageBoxLayer {
         }
     }
 
-    fn update(&mut self, event: Event) {
+    fn before_show(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn update(&mut self, event: Event) -> std::io::Result<()> {
         if let Event::Key(key_event) = event {
             if key_event.kind == KeyEventKind::Press {
                 match (self.type_, key_event.code) {
@@ -165,8 +171,14 @@ impl Layer for MessageBoxLayer {
                         }
                     }
                     (Type::YesOrNo, KeyCode::Enter) => self.exit = true,
-                    (Type::Ok, KeyCode::Enter) => self.exit = true,
-                    (Type::Cancel, KeyCode::Enter) => self.exit = true,
+                    (Type::Ok, KeyCode::Enter) => {
+                        self.result = MessageBoxResult::Ok;
+                        self.exit = true;
+                    }
+                    (Type::Cancel, KeyCode::Enter) => {
+                        self.result = MessageBoxResult::Cancel;
+                        self.exit = true;
+                    }
                     (_, KeyCode::Esc) => {
                         self.result = MessageBoxResult::None;
                         self.exit = true;
@@ -175,6 +187,7 @@ impl Layer for MessageBoxLayer {
                 }
             }
         }
+        Ok(())
     }
 
     fn is_exit(&self) -> bool {

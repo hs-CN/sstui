@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{io, path::Path, thread::spawn};
 
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -47,32 +47,73 @@ impl Layer for MainLayer {
         frame.render_widget(log_block, log);
     }
 
-    fn update(&mut self, event: ratatui::crossterm::event::Event) {
+    fn before_show(&mut self) -> io::Result<()> {
+        if self.sslocal.is_none() {
+            let msg = MessageBoxLayer::yes_or_no("Info", "sslocal not found, download it?")
+                .green()
+                .on_gray()
+                .show()?;
+            if msg.result.is_yes() {
+                let msg = MessageBoxLayer::cancel("Info", "get latest version now...")
+                    .green()
+                    .on_gray()
+                    .thread_safe();
+                let msg_cloned = msg.clone();
+                let task = spawn(move || {
+                    SSLocalManager::get_latest().and_then(|latest| {
+                        msg_cloned.write().unwrap().close();
+                        Ok(latest)
+                    })
+                });
+                if !msg.show()?.read().unwrap().result.is_cancel() {
+                    match task.join() {
+                        Ok(latest) => match latest {
+                            Ok(latest) => {
+                                MessageBoxLayer::ok(
+                                    "Info",
+                                    format!("get latest version:{}", latest.tag_name),
+                                )
+                                .green()
+                                .on_gray()
+                                .show()?;
+                            }
+                            Err(err) => {
+                                MessageBoxLayer::ok("Info", format!("err:{}", err))
+                                    .red()
+                                    .on_gray()
+                                    .show()?;
+                            }
+                        },
+                        Err(err) => {
+                            MessageBoxLayer::ok("Info", format!("err:{:?}", err))
+                                .red()
+                                .on_gray()
+                                .show()?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn update(&mut self, event: Event) -> std::io::Result<()> {
         if let Event::Key(key_event) = event {
             if key_event.kind == KeyEventKind::Press {
                 match key_event.code {
-                    KeyCode::Char('q') => {
-                        let msg = MessageBoxLayer::yes_or_no("Info", "exit?")
-                            .green()
-                            .on_gray()
-                            .show();
-                        if let Ok(msg) = msg {
-                            self.exit = msg.result.is_yes();
-                        }
-                    }
                     KeyCode::Esc => {
-                        let msg = MessageBoxLayer::yes_or_no("Info", "exit?")
+                        self.exit = MessageBoxLayer::yes_or_no("Info", "exit?")
                             .green()
                             .on_gray()
-                            .show();
-                        if let Ok(msg) = msg {
-                            self.exit = msg.result.is_yes();
-                        }
+                            .show()?
+                            .result
+                            .is_yes();
                     }
                     _ => {}
                 }
             }
         }
+        Ok(())
     }
 
     fn is_exit(&self) -> bool {
