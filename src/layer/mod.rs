@@ -1,7 +1,7 @@
-mod main_layer;
-mod messagebox_layer;
+mod main;
+mod messagebox;
 
-pub use main_layer::MainLayer;
+pub use main::MainLayer;
 
 use ratatui::crossterm::event::{poll, read, Event};
 use std::{
@@ -15,7 +15,7 @@ static TERMINAL: OnceLock<RwLock<ratatui::DefaultTerminal>> = OnceLock::new();
 pub trait Layer {
     fn view(&mut self, frame: &mut ratatui::Frame);
     fn before_show(&mut self) -> std::io::Result<()>;
-    fn update(&mut self, event: Event) -> std::io::Result<()>;
+    fn update(&mut self, event: Option<Event>) -> std::io::Result<()>;
     fn close(&mut self);
     fn is_exit(&self) -> bool;
     fn thread_safe(self) -> ThreadSafeLayer<Self>
@@ -37,7 +37,9 @@ pub trait Layer {
                 .unwrap()
                 .draw(|frame| self.view(frame))?;
             if poll(Duration::from_millis(10))? {
-                self.update(read()?)?;
+                self.update(Some(read()?))?;
+            } else {
+                self.update(None)?;
             }
         }
         Ok(self)
@@ -57,7 +59,9 @@ impl<L: Layer> ThreadSafeLayer<L> {
                 .unwrap()
                 .draw(|frame| self.0.write().unwrap().view(frame))?;
             if poll(Duration::from_millis(10))? {
-                self.0.write().unwrap().update(read()?)?;
+                self.0.write().unwrap().update(Some(read()?))?;
+            } else {
+                self.0.write().unwrap().update(None)?;
             }
         }
         Ok(self)

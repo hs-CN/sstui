@@ -7,7 +7,10 @@ use ratatui::{
     widgets::Block,
 };
 
-use super::messagebox_layer::MessageBoxLayer;
+use super::messagebox::{
+    CancelableMessageBoxLayer, CancelableMessageBoxResult, MessageBoxLayer, YesNoMessageBoxLayer,
+    YesNoMessageBoxResult,
+};
 use crate::{Layer, SSLocal, SSLocalManager, UserData};
 
 pub struct MainLayer {
@@ -49,27 +52,22 @@ impl Layer for MainLayer {
 
     fn before_show(&mut self) -> io::Result<()> {
         if self.sslocal.is_none() {
-            let msg = MessageBoxLayer::yes_or_no("Info", "sslocal not found, download it?")
+            let msg = YesNoMessageBoxLayer::new("Info", "sslocal not found, download it?")
                 .green()
                 .on_gray()
                 .show()?;
-            if msg.result.is_yes() {
-                let msg = MessageBoxLayer::cancel("Info", "get latest version now...")
-                    .green()
-                    .on_gray()
-                    .thread_safe();
-                let msg_cloned = msg.clone();
-                let task = spawn(move || {
-                    SSLocalManager::get_latest().and_then(|latest| {
-                        msg_cloned.write().unwrap().close();
-                        Ok(latest)
-                    })
-                });
-                if !msg.show()?.read().unwrap().result.is_cancel() {
-                    match task.join() {
+            if msg.result == YesNoMessageBoxResult::Yes {
+                let task = spawn(SSLocalManager::get_latest);
+                let cancelable =
+                    CancelableMessageBoxLayer::new("Info", "get latest version now...", task)
+                        .green()
+                        .on_gray()
+                        .show()?;
+                if let CancelableMessageBoxResult::Complete(result) = cancelable.result {
+                    match result {
                         Ok(latest) => match latest {
                             Ok(latest) => {
-                                MessageBoxLayer::ok(
+                                MessageBoxLayer::new(
                                     "Info",
                                     format!("get latest version:{}", latest.tag_name),
                                 )
@@ -78,14 +76,14 @@ impl Layer for MainLayer {
                                 .show()?;
                             }
                             Err(err) => {
-                                MessageBoxLayer::ok("Info", format!("err:{}", err))
+                                MessageBoxLayer::new("Info", format!("err:{}", err))
                                     .red()
                                     .on_gray()
                                     .show()?;
                             }
                         },
                         Err(err) => {
-                            MessageBoxLayer::ok("Info", format!("err:{:?}", err))
+                            MessageBoxLayer::new("Info", format!("err:{:?}", err))
                                 .red()
                                 .on_gray()
                                 .show()?;
@@ -97,19 +95,21 @@ impl Layer for MainLayer {
         Ok(())
     }
 
-    fn update(&mut self, event: Event) -> std::io::Result<()> {
-        if let Event::Key(key_event) = event {
-            if key_event.kind == KeyEventKind::Press {
-                match key_event.code {
-                    KeyCode::Esc => {
-                        self.exit = MessageBoxLayer::yes_or_no("Info", "exit?")
-                            .green()
-                            .on_gray()
-                            .show()?
-                            .result
-                            .is_yes();
+    fn update(&mut self, event: Option<Event>) -> std::io::Result<()> {
+        if let Some(event) = event {
+            if let Event::Key(key_event) = event {
+                if key_event.kind == KeyEventKind::Press {
+                    match key_event.code {
+                        KeyCode::Esc => {
+                            self.exit = YesNoMessageBoxLayer::new("Info", "exit?")
+                                .green()
+                                .on_gray()
+                                .show()?
+                                .result
+                                == YesNoMessageBoxResult::Yes;
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
