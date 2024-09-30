@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use super::Layer;
+use crate::Layer;
 
 pub struct MessageBoxLayer {
     style: Style,
@@ -81,6 +81,16 @@ impl Layer for MessageBoxLayer {
 pub enum YesNoMessageBoxResult {
     Yes,
     No,
+}
+
+impl YesNoMessageBoxResult {
+    pub fn is_yes(&self) -> bool {
+        *self == YesNoMessageBoxResult::Yes
+    }
+
+    pub fn is_no(&self) -> bool {
+        *self == YesNoMessageBoxResult::No
+    }
 }
 
 pub struct YesNoMessageBoxLayer {

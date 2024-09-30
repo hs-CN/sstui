@@ -1,8 +1,8 @@
 mod layer;
 mod sslocal;
 mod userdata;
+mod views;
 mod widgets;
 
-pub use layer::{terminal_init, terminal_init_default, Layer, MainLayer, Show};
-pub use sslocal::{SSLocal, SSLocalManager};
-pub use userdata::UserData;
+pub use layer::*;
+pub use views::mainview::MainLayer;

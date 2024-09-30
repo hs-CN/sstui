@@ -24,7 +24,7 @@ pub struct LatestRelease {
     pub assets: Vec<Asset>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Asset {
     pub name: String,
     pub size: usize,
@@ -104,7 +104,7 @@ impl SSLocalManager {
         Self::_download(agent, latest, f)
     }
 
-    pub fn extract_zip(bytes: Vec<u8>) -> zip::result::ZipResult<()> {
+    pub fn extract_zip(bytes: &[u8]) -> zip::result::ZipResult<()> {
         let mut zip = ZipArchive::new(Cursor::new(bytes))?;
         let mut dir = current_exe()?;
         dir.set_file_name("ss");
@@ -112,7 +112,7 @@ impl SSLocalManager {
         Ok(())
     }
 
-    pub fn extract_tar_xz(bytes: Vec<u8>) -> zip::result::ZipResult<()> {
+    pub fn extract_tar_xz(bytes: &[u8]) -> zip::result::ZipResult<()> {
         let xz = XzDecoder::new(Cursor::new(bytes));
         let mut tar = tar::Archive::new(xz);
         let mut dir = current_exe()?;

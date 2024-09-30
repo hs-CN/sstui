@@ -1,8 +1,3 @@
-mod main;
-mod messagebox;
-
-pub use main::MainLayer;
-
 use ratatui::crossterm::event::{poll, read, Event};
 use std::{
     sync::{Arc, OnceLock, RwLock},
