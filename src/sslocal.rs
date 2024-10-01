@@ -1,8 +1,4 @@
-use std::{
-    env::current_exe,
-    io::{self, Cursor},
-    path::PathBuf,
-};
+use std::{env::current_exe, io::Cursor, path::PathBuf, sync::mpsc::Sender};
 
 use serde::Deserialize;
 use xz2::read::XzDecoder;
@@ -15,6 +11,10 @@ pub struct SSLocal {
 impl SSLocal {
     pub fn new(exec_path: PathBuf) -> Self {
         Self { exec_path }
+    }
+
+    pub fn version(&self) -> String {
+        todo!()
     }
 }
 
@@ -37,7 +37,7 @@ impl SSLocalManager {
     const CHECK_URL: &'static str =
         "https://api.github.com/repos/shadowsocks/shadowsocks-rust/releases/latest";
 
-    pub fn find_ss_exec_path() -> io::Result<Option<PathBuf>> {
+    pub fn find_ss_exec_path() -> std::io::Result<Option<PathBuf>> {
         let mut dir = current_exe()?;
         dir.set_file_name("ss");
         for entry in dir.read_dir()? {
@@ -69,39 +69,35 @@ impl SSLocalManager {
         Self::_get_latest(agent)
     }
 
-    fn _download<F: Fn(usize)>(
-        agent: ureq::Agent,
-        latest: &Asset,
-        f: F,
-    ) -> anyhow::Result<Vec<u8>> {
-        let response = agent.get(&latest.browser_download_url).call()?;
+    fn _download(agent: ureq::Agent, url: &str, tx: Sender<Vec<u8>>) -> anyhow::Result<()> {
+        let response = agent.get(url).call()?;
         let mut bytes_reader = response.into_reader();
-        let mut bytes: Vec<u8> = Vec::with_capacity(latest.size);
         let mut buf = [0u8; 4096];
         loop {
             let n = bytes_reader.read(&mut buf)?;
             if n == 0 {
                 break;
             }
-            bytes.extend_from_slice(&buf[..n]);
-            f(bytes.len());
+            if tx.send(buf[..n].to_vec()).is_err() {
+                break;
+            }
         }
-        Ok(bytes)
+        Ok(())
     }
 
-    pub fn download<F: Fn(usize)>(latest: &Asset, f: F) -> anyhow::Result<Vec<u8>> {
+    pub fn download(url: &str, tx: Sender<Vec<u8>>) -> anyhow::Result<()> {
         let agent = ureq::AgentBuilder::new().build();
-        Self::_download(agent, latest, f)
+        Self::_download(agent, url, tx)
     }
 
-    pub fn download_proxy<F: Fn(usize), P: AsRef<str>>(
-        latest: &Asset,
-        f: F,
+    pub fn download_proxy<P: AsRef<str>>(
+        url: &str,
+        tx: Sender<Vec<u8>>,
         proxy: P,
-    ) -> anyhow::Result<Vec<u8>> {
+    ) -> anyhow::Result<()> {
         let proxy = ureq::Proxy::new(proxy)?;
         let agent = ureq::AgentBuilder::new().proxy(proxy).build();
-        Self::_download(agent, latest, f)
+        Self::_download(agent, url, tx)
     }
 
     pub fn extract_zip(bytes: &[u8]) -> zip::result::ZipResult<()> {

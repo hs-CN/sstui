@@ -58,7 +58,7 @@ impl MainLayer {
                     Ok(latest) => {
                         let yes_no = YesNoMessageBoxLayer::new(
                             "Info",
-                            format!("find latest version:{}, download it?", latest.tag_name),
+                            format!("find latest version: {}, download it?", latest.tag_name),
                         )
                         .green()
                         .on_gray()
