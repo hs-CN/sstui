@@ -1,4 +1,4 @@
-use sstui::{terminal_init_default, MainLayer, Show};
+use sstui::{terminal_init_default, Layer, MainLayer};
 
 fn main() {
     terminal_init_default();

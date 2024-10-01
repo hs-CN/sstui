@@ -2,6 +2,7 @@ use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     layout::{Constraint, Flex, Layout},
     style::Stylize,
+    text::Line,
     widgets::{Block, Paragraph},
 };
 
@@ -15,7 +16,7 @@ use super::{
 use crate::{
     sslocal::{SSLocal, SSLocalManager},
     userdata::UserData,
-    Layer, Show,
+    Layer,
 };
 
 pub struct MainLayer {
@@ -54,31 +55,27 @@ impl MainLayer {
         .show()?;
         if let CancelableMessageBoxResult::Complete(result) = cancelable.result {
             match result {
-                Ok(latest) => match latest {
-                    Ok(latest) => {
-                        let yes_no = YesNoMessageBoxLayer::new(
-                            "Info",
-                            format!("find latest version: {}, download it?", latest.tag_name),
-                        )
-                        .green()
-                        .on_gray()
-                        .show()?;
-                        if yes_no.result.is_yes() {
-                            let update = SSLocalUpdateLayer::new(latest).show()?;
-                            if update.result.is_some() {
-                                self.sslocal = update.result;
-                            }
+                Ok(latest) => {
+                    let yes_no = YesNoMessageBoxLayer::new(
+                        "Info",
+                        Line::from(vec![
+                            "find latest version:".into(),
+                            format!(" {} ", latest.tag_name).white().on_red(),
+                            ", download it?".into(),
+                        ]),
+                    )
+                    .green()
+                    .on_gray()
+                    .show()?;
+                    if yes_no.result.is_yes() {
+                        let update = SSLocalUpdateLayer::new(latest).show()?;
+                        if update.result.is_some() {
+                            self.sslocal = update.result;
                         }
                     }
-                    Err(err) => {
-                        MessageBoxLayer::new("Info", format!("err:{}", err))
-                            .red()
-                            .on_gray()
-                            .show()?;
-                    }
-                },
+                }
                 Err(err) => {
-                    MessageBoxLayer::new("Info", format!("err:{:?}", err))
+                    MessageBoxLayer::new("Error", err.to_string())
                         .red()
                         .on_gray()
                         .show()?;

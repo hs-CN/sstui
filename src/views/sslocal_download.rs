@@ -16,7 +16,7 @@ use ratatui::{
 
 use crate::{
     sslocal::{Asset, SSLocal, SSLocalManager},
-    Layer, Show,
+    Layer,
 };
 
 use super::messagebox::MessageBoxLayer;
@@ -42,6 +42,11 @@ impl SSLocalDownloadLayer {
         let asset_cloned = asset.clone();
         let download_task = std::thread::spawn(move || {
             SSLocalManager::download(&asset_cloned.browser_download_url, tx)
+            // SSLocalManager::download_proxy(
+            //     &asset_cloned.browser_download_url,
+            //     tx,
+            //     "socks5://127.0.0.1:10808",
+            // )
         });
 
         let asset_cloned = asset.clone();
@@ -101,14 +106,14 @@ impl Layer for SSLocalDownloadLayer {
         let downloaded_size = self
             .downloaded_size
             .load(std::sync::atomic::Ordering::Relaxed);
-        let percent = downloaded_size / self.asset.size;
+        let ratio = downloaded_size as f64 / self.asset.size as f64;
         let downloaded_size = downloaded_size as f32 / 1024.0 / 1024.0;
         let total_size = self.asset.size as f32 / 1024.0 / 1024.0;
 
         let progress = Gauge::default()
             .block(Block::bordered().title(format!("Downloading '{}' ", self.asset.name)))
             .label(format!("{:.2} MB / {:.2} MB", downloaded_size, total_size))
-            .percent(percent as u16)
+            .ratio(ratio)
             .gauge_style(Style::default().fg(Color::Green))
             .use_unicode(true)
             .green()
@@ -133,7 +138,7 @@ impl Layer for SSLocalDownloadLayer {
                 match self.download_task.take().unwrap().join() {
                     Ok(ok) => {
                         if let Err(err) = ok {
-                            MessageBoxLayer::new("Error", format!("{:?}", err))
+                            MessageBoxLayer::new("Error", err.to_string())
                                 .red()
                                 .on_gray()
                                 .show()?;
@@ -149,7 +154,7 @@ impl Layer for SSLocalDownloadLayer {
                 match self.extract_task.take().unwrap().join() {
                     Ok(ok) => {
                         if let Err(err) = ok {
-                            MessageBoxLayer::new("Error", format!("{:?}", err))
+                            MessageBoxLayer::new("Error", err.to_string())
                                 .red()
                                 .on_gray()
                                 .show()?;

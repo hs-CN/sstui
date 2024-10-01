@@ -2,7 +2,6 @@ use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout, Margin},
     style::{palette::tailwind::*, Style, Styled, Stylize},
-    text::Text,
     widgets::{
         HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
         TableState,
@@ -15,25 +14,25 @@ use super::{
 };
 use crate::{
     sslocal::{LatestRelease, SSLocal},
-    Layer, Show,
+    Layer,
 };
 
 pub struct SSLocalUpdateLayer {
     exit: bool,
     latest: LatestRelease,
-    name_longest_len: u16,
-    size_str_vec: Vec<String>,
-    size_longest_len: u16,
-    table_state: TableState,
+    longest_name_len: u16,
+    longest_size_str_len: u16,
+    row_str_vec: Vec<(String, String, String)>,
     selected_style: Style,
-    row_style: [Style; 2],
+    row_styles: [Style; 2],
+    table_state: TableState,
     scroll_state: ScrollbarState,
     pub result: Option<SSLocal>,
 }
 
 impl SSLocalUpdateLayer {
     pub fn new(latest: LatestRelease) -> Self {
-        let name_longest_len = latest
+        let longest_name_len = latest
             .assets
             .iter()
             .map(|asset| asset.name.len())
@@ -44,24 +43,37 @@ impl SSLocalUpdateLayer {
             .iter()
             .map(|asset| format!("{:.2} MB", asset.size as f32 / 1024.0 / 1024.0))
             .collect();
-        let size_longest_len = size_str_vec.iter().map(|s| s.len()).max().unwrap_or(0) as u16;
+        let longest_size_str_len = size_str_vec.iter().map(|s| s.len()).max().unwrap_or(0) as u16;
+        let row_str_vec = latest
+            .assets
+            .iter()
+            .enumerate()
+            .map(|(i, asset)| {
+                (
+                    format!("\n{}\n", asset.name),
+                    format!("\n{}\n", size_str_vec[i]),
+                    format!("\n{}\n", asset.browser_download_url),
+                )
+            })
+            .collect();
 
         let selected_style = Style::default().fg(BLACK).bg(INDIGO.c400);
-        let row_style = [
+        let row_styles = [
             Style::default().fg(WHITE).bg(GRAY.c950),
             Style::default().fg(WHITE).bg(GRAY.c900),
         ];
+        let table_state = TableState::default().with_selected(0);
         let scroll_state = ScrollbarState::new((latest.assets.len() - 1) * 3);
 
         Self {
             exit: false,
             latest,
-            name_longest_len,
-            size_str_vec,
-            size_longest_len,
-            table_state: TableState::default().with_selected(0),
+            longest_name_len,
+            longest_size_str_len,
+            row_str_vec,
             selected_style,
-            row_style,
+            row_styles,
+            table_state,
             scroll_state,
             result: None,
         }
@@ -80,29 +92,27 @@ impl Layer for SSLocalUpdateLayer {
             .centered();
         frame.render_widget(footer, footer_layout);
 
-        let header = Row::new(["Name", "Size", "Download Link"])
-            .white()
-            .on_blue();
-        let rows = self.latest.assets.iter().enumerate().map(|(i, asset)| {
-            Row::new([
-                format!("\n{}\n", asset.name),
-                format!("\n{}\n", self.size_str_vec[i]),
-                format!("\n{}\n", asset.browser_download_url),
-            ])
-            .set_style(self.row_style[i % 2])
-            .height(3)
-        });
+        let header = Row::new(["Name", "Size", "Download Url"]).white().on_blue();
+        let rows = self
+            .row_str_vec
+            .iter()
+            .enumerate()
+            .map(|(i, (name, size, url))| {
+                Row::new([name.as_str(), size.as_str(), url.as_str()])
+                    .set_style(self.row_styles[i % 2])
+                    .height(3)
+            });
         let table = Table::new(
             rows,
             [
-                Constraint::Length(self.name_longest_len + 1),
-                Constraint::Length(self.size_longest_len + 1),
+                Constraint::Length(self.longest_name_len + 1),
+                Constraint::Length(self.longest_size_str_len + 1),
                 Constraint::Percentage(100),
             ],
         )
         .header(header)
         .highlight_style(self.selected_style)
-        .highlight_symbol(Text::from(vec!["".into(), " █ ".into(), "".into()]))
+        .highlight_symbol(vec!["".into(), " █ ".into(), "".into()])
         .highlight_spacing(HighlightSpacing::Always);
         frame.render_stateful_widget(table, table_layout, &mut self.table_state);
 

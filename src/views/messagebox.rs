@@ -2,20 +2,21 @@ use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     layout::{Constraint, Flex, Layout, Rect},
     style::{Style, Styled, Stylize},
-    widgets::{Block, Clear, Paragraph},
+    text::Text,
+    widgets::{block::Title, Block, Clear, Paragraph},
 };
 
 use crate::Layer;
 
-pub struct MessageBoxLayer {
+pub struct MessageBoxLayer<'a> {
     style: Style,
-    title: String,
-    message: String,
+    title: Title<'a>,
+    message: Text<'a>,
     exit: bool,
 }
 
-impl MessageBoxLayer {
-    pub fn new<TS: Into<String>, MS: Into<String>>(title: TS, message: MS) -> Self {
+impl<'a> MessageBoxLayer<'a> {
+    pub fn new<T: Into<Title<'a>>, M: Into<Text<'a>>>(title: T, message: M) -> Self {
         Self {
             style: Style::default(),
             title: title.into(),
@@ -25,7 +26,7 @@ impl MessageBoxLayer {
     }
 }
 
-impl Styled for MessageBoxLayer {
+impl<'a> Styled for MessageBoxLayer<'a> {
     type Item = Self;
 
     fn style(&self) -> Style {
@@ -40,9 +41,9 @@ impl Styled for MessageBoxLayer {
     }
 }
 
-impl Layer for MessageBoxLayer {
+impl<'a> Layer for MessageBoxLayer<'a> {
     fn view(&mut self, frame: &mut ratatui::Frame) {
-        let bottom = message_box_body(&self.title, &self.message, self.style, frame);
+        let bottom = message_box_body(self.title.clone(), self.message.clone(), self.style, frame);
         let ok = Paragraph::new("[Ok]".white().on_blue())
             .set_style(self.style)
             .centered();
@@ -93,16 +94,16 @@ impl YesNoMessageBoxResult {
     }
 }
 
-pub struct YesNoMessageBoxLayer {
+pub struct YesNoMessageBoxLayer<'a> {
     style: Style,
-    title: String,
-    message: String,
+    title: Title<'a>,
+    message: Text<'a>,
     exit: bool,
     pub result: YesNoMessageBoxResult,
 }
 
-impl YesNoMessageBoxLayer {
-    pub fn new<TS: Into<String>, MS: Into<String>>(title: TS, message: MS) -> Self {
+impl<'a> YesNoMessageBoxLayer<'a> {
+    pub fn new<T: Into<Title<'a>>, M: Into<Text<'a>>>(title: T, message: M) -> Self {
         Self {
             style: Style::default(),
             title: title.into(),
@@ -113,7 +114,7 @@ impl YesNoMessageBoxLayer {
     }
 }
 
-impl Styled for YesNoMessageBoxLayer {
+impl<'a> Styled for YesNoMessageBoxLayer<'a> {
     type Item = Self;
 
     fn style(&self) -> Style {
@@ -128,9 +129,9 @@ impl Styled for YesNoMessageBoxLayer {
     }
 }
 
-impl Layer for YesNoMessageBoxLayer {
+impl<'a> Layer for YesNoMessageBoxLayer<'a> {
     fn view(&mut self, frame: &mut ratatui::Frame) {
-        let bottom = message_box_body(&self.title, &self.message, self.style, frame);
+        let bottom = message_box_body(self.title.clone(), self.message.clone(), self.style, frame);
         let [bottom_left, bottom_right] =
             Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .flex(Flex::Legacy)
@@ -194,22 +195,22 @@ impl Layer for YesNoMessageBoxLayer {
 
 pub enum CancelableMessageBoxResult<T> {
     Cancel,
-    Complete(std::thread::Result<T>),
+    Complete(T),
 }
 
-pub struct CancelableMessageBoxLayer<T> {
+pub struct CancelableMessageBoxLayer<'a, T> {
     style: Style,
-    title: String,
-    message: String,
+    title: Title<'a>,
+    message: Text<'a>,
     exit: bool,
     task: Option<std::thread::JoinHandle<T>>,
     pub result: CancelableMessageBoxResult<T>,
 }
 
-impl<T> CancelableMessageBoxLayer<T> {
-    pub fn new<TS: Into<String>, MS: Into<String>>(
-        title: TS,
-        message: MS,
+impl<'a, T> CancelableMessageBoxLayer<'a, T> {
+    pub fn new<TI: Into<Title<'a>>, M: Into<Text<'a>>>(
+        title: TI,
+        message: M,
         task: std::thread::JoinHandle<T>,
     ) -> Self {
         Self {
@@ -223,7 +224,7 @@ impl<T> CancelableMessageBoxLayer<T> {
     }
 }
 
-impl<T> Styled for CancelableMessageBoxLayer<T> {
+impl<'a, T> Styled for CancelableMessageBoxLayer<'a, T> {
     type Item = Self;
 
     fn style(&self) -> Style {
@@ -238,9 +239,9 @@ impl<T> Styled for CancelableMessageBoxLayer<T> {
     }
 }
 
-impl<T> Layer for CancelableMessageBoxLayer<T> {
+impl<'a, T> Layer for CancelableMessageBoxLayer<'a, T> {
     fn view(&mut self, frame: &mut ratatui::Frame) {
-        let bottom = message_box_body(&self.title, &self.message, self.style, frame);
+        let bottom = message_box_body(self.title.clone(), self.message.clone(), self.style, frame);
         let cancel = Paragraph::new("[Cancel]".white().on_blue())
             .set_style(self.style)
             .centered();
@@ -252,15 +253,20 @@ impl<T> Layer for CancelableMessageBoxLayer<T> {
     }
 
     fn update(&mut self, event: Option<Event>) -> std::io::Result<()> {
-        if let Some(task) = &self.task {
-            if task.is_finished() {
-                self.exit = true;
+        if self.task.as_ref().unwrap().is_finished() {
+            match self.task.take().unwrap().join() {
+                Ok(result) => self.result = CancelableMessageBoxResult::Complete(result),
+                Err(err) => {
+                    MessageBoxLayer::new("Error", format!("{:?}", err))
+                        .red()
+                        .on_gray()
+                        .show()?;
+                }
             }
+            self.exit = true;
         }
 
-        if self.exit {
-            self.result = CancelableMessageBoxResult::Complete(self.task.take().unwrap().join());
-        } else {
+        if !self.exit {
             if let Some(event) = event {
                 if let Event::Key(key_event) = event {
                     if key_event.kind == KeyEventKind::Press {
@@ -285,14 +291,16 @@ impl<T> Layer for CancelableMessageBoxLayer<T> {
     }
 }
 
-fn message_box_body(title: &str, message: &str, style: Style, frame: &mut ratatui::Frame) -> Rect {
-    let lines: Vec<&str> = message.lines().collect();
-    let line_count = lines.len() as u16;
-    let line_width = lines.iter().map(|l| l.len()).max().unwrap().max(10) as u16;
-    let [center] = Layout::vertical([Constraint::Length(line_count + 2)])
+fn message_box_body<'a>(
+    title: Title<'a>,
+    message: Text<'a>,
+    style: Style,
+    frame: &mut ratatui::Frame,
+) -> Rect {
+    let [center] = Layout::vertical([Constraint::Length(message.lines.len() as u16 + 2)])
         .flex(Flex::Center)
         .areas(frame.area());
-    let [center] = Layout::horizontal([Constraint::Length(line_width + 4)])
+    let [center] = Layout::horizontal([Constraint::Length(message.width().max(10) as u16 + 4)])
         .flex(Flex::Center)
         .areas(center);
     let bottom = Rect {
