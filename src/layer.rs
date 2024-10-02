@@ -7,8 +7,8 @@ use std::{
 static TERMINAL: OnceLock<RwLock<ratatui::DefaultTerminal>> = OnceLock::new();
 
 pub trait Layer {
-    fn view(&mut self, frame: &mut ratatui::Frame);
     fn before_show(&mut self) -> std::io::Result<()>;
+    fn view(&mut self, frame: &mut ratatui::Frame);
     fn update(&mut self, event: Option<Event>) -> std::io::Result<()>;
     fn close(&mut self);
     fn is_exit(&self) -> bool;

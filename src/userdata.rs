@@ -6,7 +6,19 @@ use std::{env::current_exe, fs, io};
 pub struct UserData {
     pub local_port: u16,
     pub lan_support: bool,
+    pub selected_server: Option<(usize, usize)>,
     pub server_groups: Vec<ServerGroup>,
+}
+
+impl Default for UserData {
+    fn default() -> Self {
+        Self {
+            local_port: 10808,
+            lan_support: false,
+            selected_server: None,
+            server_groups: Vec::new(),
+        }
+    }
 }
 
 impl UserData {
@@ -22,16 +34,6 @@ impl UserData {
         file_path.set_file_name("userdata");
         let content = serde_json::to_vec(&self)?;
         fs::write(file_path, content)
-    }
-}
-
-impl Default for UserData {
-    fn default() -> Self {
-        Self {
-            local_port: 10808,
-            lan_support: false,
-            server_groups: Vec::new(),
-        }
     }
 }
 
@@ -82,9 +84,9 @@ impl ServerGroup {
         match self.update_type.as_ref().unwrap() {
             ServerUpdateType::SSJson => self.ss_servers = serde_json::from_str(&content)?,
             ServerUpdateType::SSUrl => {
-                let mut ss_servers = Vec::new();
-                let bytes = BASE64_STANDARD.decode(&content).unwrap();
+                let bytes = BASE64_STANDARD.decode(&content)?;
                 let content = String::from_utf8_lossy(&bytes);
+                let mut ss_servers = Vec::new();
                 for line in content.lines() {
                     if let Ok(ss_server) = SSServer::from_ssurl_str(line) {
                         ss_servers.push(ss_server);

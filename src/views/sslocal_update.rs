@@ -86,7 +86,7 @@ impl Layer for SSLocalUpdateLayer {
             Layout::vertical([Constraint::Percentage(100), Constraint::Length(1)])
                 .areas(frame.area());
 
-        let footer = Paragraph::new("Exit (Esc) | Select (Enter) | Up (↑) | Down (↓)")
+        let footer = Paragraph::new("Up (↑) | Down (↓) | Select (Enter) | Exit (Esc)")
             .white()
             .on_cyan()
             .centered();
