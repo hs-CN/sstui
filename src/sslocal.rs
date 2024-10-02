@@ -1,8 +1,16 @@
-use std::{env::current_exe, io::Cursor, path::PathBuf, process::Command, sync::mpsc::Sender};
+use std::{
+    env::current_exe,
+    io::Cursor,
+    path::PathBuf,
+    process::{Child, Command, Stdio},
+    sync::mpsc::Sender,
+};
 
 use serde::Deserialize;
 use xz2::read::XzDecoder;
 use zip::ZipArchive;
+
+use crate::userdata::SSServer;
 
 pub struct SSLocal {
     exec_path: PathBuf,
@@ -14,6 +22,32 @@ impl SSLocal {
         let output = Command::new(&exec_path).arg("--version").output()?;
         let version = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(Self { exec_path, version })
+    }
+
+    pub fn run(
+        &self,
+        server: &SSServer,
+        local_port: u16,
+        lan_support: bool,
+    ) -> std::io::Result<Child> {
+        let local_addr = if lan_support {
+            format!("0.0.0.0:{}", local_port)
+        } else {
+            format!("127.0.0.1:{}", local_port)
+        };
+        Command::new(&self.exec_path)
+            .stdout(Stdio::piped())
+            .arg("-b")
+            .arg(local_addr)
+            .arg("-s")
+            .arg(format!("{}:{}", &server.server, &server.server_port))
+            .arg("-m")
+            .arg(&server.method)
+            .arg("-k")
+            .arg(&server.password)
+            .arg("-U")
+            .arg("-v")
+            .spawn()
     }
 }
 

@@ -1,9 +1,18 @@
+use std::{
+    io::{BufRead, BufReader},
+    process::Child,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock,
+    },
+};
+
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     layout::{Constraint, Flex, Layout, Margin},
     style::{palette::tailwind::*, Color, Style, Styled, Stylize},
     text::Line,
-    widgets::{Block, HighlightSpacing, Paragraph, Row, Table, TableState, Tabs},
+    widgets::{Block, HighlightSpacing, Paragraph, Row, Table, TableState, Tabs, Wrap},
 };
 
 use super::{
@@ -35,6 +44,9 @@ pub struct MainLayer {
     table_state: TableState,
     selected_style: Style,
     sslocal: Option<SSLocal>,
+    child: Option<Child>,
+    child_stop: Arc<AtomicBool>,
+    logs: Arc<RwLock<String>>,
 }
 
 impl MainLayer {
@@ -56,6 +68,9 @@ impl MainLayer {
             table_state,
             selected_style,
             sslocal: None,
+            child: None,
+            child_stop: Arc::new(AtomicBool::new(false)),
+            logs: Arc::new(RwLock::new(String::new())),
         }
     }
 
@@ -246,7 +261,10 @@ impl Layer for MainLayer {
             frame.render_widget(main, center);
         }
 
-        let mut log = Block::bordered().title("Log");
+        let log = self.logs.read().unwrap();
+        let mut log = Paragraph::new(log.as_str())
+            .block(Block::bordered().title("Log"))
+            .wrap(Wrap { trim: true });
         if self.state == State::Log {
             log = log.green();
         }
@@ -273,6 +291,13 @@ impl Layer for MainLayer {
                                 .show()?
                                 .result
                                 .is_yes();
+                            if self.exit {
+                                self.userdata.save()?;
+                                self.child_stop.store(true, Ordering::Relaxed);
+                                if let Some(child) = &mut self.child {
+                                    child.kill().unwrap();
+                                }
+                            }
                         }
                         KeyCode::Tab => {
                             self.state = match self.state {
@@ -352,6 +377,64 @@ impl Layer for MainLayer {
                             State::Log => self.sslocal_update()?,
                         },
                         KeyCode::Char('c') => {}
+                        KeyCode::Enter => match self.state {
+                            State::Tab => {
+                                if self.show_group_index < self.userdata.server_groups.len() {
+                                    if let Some(i) = self.table_state.selected() {
+                                        let selected_server = &self.userdata.server_groups
+                                            [self.show_group_index]
+                                            .ss_servers[i];
+                                        if let Some(sslocal) = &self.sslocal {
+                                            self.child_stop.store(true, Ordering::Relaxed);
+                                            if let Some(child) = &mut self.child {
+                                                child.kill().unwrap();
+                                            }
+
+                                            match sslocal.run(
+                                                selected_server,
+                                                self.userdata.local_port,
+                                                self.userdata.lan_support,
+                                            ) {
+                                                Ok(mut child) => {
+                                                    if child.stdout.is_some() {
+                                                        let mut reader = BufReader::new(
+                                                            child.stdout.take().unwrap(),
+                                                        );
+                                                        self.child_stop
+                                                            .store(false, Ordering::Relaxed);
+                                                        let child_stop = self.child_stop.clone();
+                                                        let logs = self.logs.clone();
+                                                        std::thread::spawn(move || loop {
+                                                            if child_stop.load(Ordering::Relaxed) {
+                                                                break;
+                                                            }
+                                                            let mut buf = String::new();
+                                                            if let Ok(n) =
+                                                                reader.read_line(&mut buf)
+                                                            {
+                                                                if n > 0 {
+                                                                    *logs.write().unwrap() = buf;
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                    self.child = Some(child);
+                                                    self.userdata.selected_server =
+                                                        Some((self.show_group_index, i))
+                                                }
+                                                Err(err) => {
+                                                    MessageBoxLayer::new("Error", err.to_string())
+                                                        .red()
+                                                        .on_gray()
+                                                        .show()?;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            State::Log => {}
+                        },
                         _ => {}
                     }
                 }
