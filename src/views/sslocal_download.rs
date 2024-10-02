@@ -132,9 +132,8 @@ impl Layer for SSLocalDownloadLayer {
         if self.download_task.as_ref().unwrap().is_finished()
             && self.extract_task.as_ref().unwrap().is_finished()
         {
-            if let Some(path) = SSLocalManager::find_ss_exec_path()? {
-                self.result = Some(SSLocal::new(path));
-            } else {
+            self.result = SSLocalManager::find_sslocal()?;
+            if self.result.is_none() {
                 match self.download_task.take().unwrap().join() {
                     Ok(ok) => {
                         if let Err(err) = ok {

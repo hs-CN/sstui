@@ -1,4 +1,4 @@
-use std::{env::current_exe, io::Cursor, path::PathBuf, sync::mpsc::Sender};
+use std::{env::current_exe, io::Cursor, path::PathBuf, process::Command, sync::mpsc::Sender};
 
 use serde::Deserialize;
 use xz2::read::XzDecoder;
@@ -6,15 +6,14 @@ use zip::ZipArchive;
 
 pub struct SSLocal {
     exec_path: PathBuf,
+    pub version: String,
 }
 
 impl SSLocal {
-    pub fn new(exec_path: PathBuf) -> Self {
-        Self { exec_path }
-    }
-
-    pub fn version(&self) -> String {
-        todo!()
+    pub fn new(exec_path: PathBuf) -> std::io::Result<Self> {
+        let output = Command::new(&exec_path).arg("--version").output()?;
+        let version = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(Self { exec_path, version })
     }
 }
 
@@ -37,14 +36,15 @@ impl SSLocalManager {
     const CHECK_URL: &'static str =
         "https://api.github.com/repos/shadowsocks/shadowsocks-rust/releases/latest";
 
-    pub fn find_ss_exec_path() -> std::io::Result<Option<PathBuf>> {
+    pub fn find_sslocal() -> std::io::Result<Option<SSLocal>> {
         let mut dir = current_exe()?;
         dir.set_file_name("ss");
         for entry in dir.read_dir()? {
             let path = entry?;
             if path.file_type()?.is_file() && path.file_name().to_string_lossy().contains("sslocal")
             {
-                return Ok(Some(path.path()));
+                let sslocal = SSLocal::new(path.path())?;
+                return Ok(Some(sslocal));
             }
         }
         Ok(None)

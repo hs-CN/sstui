@@ -1,6 +1,6 @@
 mod layer;
 mod sslocal;
-mod userdata;
+pub mod userdata;
 mod views;
 mod widgets;
 

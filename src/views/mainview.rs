@@ -19,8 +19,15 @@ use crate::{
     Layer,
 };
 
+#[derive(PartialEq)]
+enum State {
+    Tab,
+    Log,
+}
+
 pub struct MainLayer {
     exit: bool,
+    state: State,
     userdata: UserData,
     sslocal: Option<SSLocal>,
 }
@@ -28,26 +35,19 @@ pub struct MainLayer {
 impl MainLayer {
     pub fn new() -> Self {
         let userdata = UserData::load().unwrap_or_default();
-        let path = std::path::Path::new(&userdata.sslocal_exec_path);
-        let sslocal = if path.exists() {
-            Some(SSLocal::new(path.to_path_buf()))
-        } else if let Ok(Some(path)) = SSLocalManager::find_ss_exec_path() {
-            Some(SSLocal::new(path))
-        } else {
-            None
-        };
 
         Self {
             exit: false,
+            state: State::Tab,
             userdata,
-            sslocal,
+            sslocal: None,
         }
     }
 
     fn sslocal_update(&mut self) -> std::io::Result<()> {
         let cancelable = CancelableMessageBoxLayer::new(
             "Info",
-            "get latest version now...",
+            "get latest version...",
             std::thread::spawn(SSLocalManager::get_latest),
         )
         .green()
@@ -59,7 +59,7 @@ impl MainLayer {
                     let yes_no = YesNoMessageBoxLayer::new(
                         "Info",
                         Line::from(vec![
-                            "find latest version:".into(),
+                            "latest version:".into(),
                             format!(" {} ", latest.tag_name).white().on_red(),
                             ", download it?".into(),
                         ]),
@@ -88,22 +88,44 @@ impl MainLayer {
 
 impl Layer for MainLayer {
     fn view(&mut self, frame: &mut ratatui::Frame) {
-        let [main, log, footer_layout] = Layout::vertical([
+        let [header_layout, tab_layout, log_layout, op_layout, footer_layout] = Layout::vertical([
+            Constraint::Length(1),
             Constraint::Percentage(70),
             Constraint::Max(15),
+            Constraint::Length(1),
             Constraint::Length(1),
         ])
         .flex(Flex::Legacy)
         .areas(frame.area());
-        let main_block = Block::bordered().title("shadowsocks servers");
-        let log_block = Block::bordered().title("log");
-        let footer = Paragraph::new("Exit (Esc)").white().on_cyan().centered();
-        frame.render_widget(main_block, main);
-        frame.render_widget(log_block, log);
+        let header = if let Some(sslocal) = &self.sslocal {
+            Paragraph::new(format!("Version: {}", sslocal.version))
+        } else {
+            Paragraph::new("Version: None")
+        };
+        frame.render_widget(header, header_layout);
+
+        let mut tab = Block::bordered().title("shadowsocks servers");
+        if self.state == State::Tab {
+            tab = tab.green();
+        }
+        frame.render_widget(tab, tab_layout);
+
+        let mut log = Block::bordered().title("Log");
+        if self.state == State::Log {
+            log = log.green();
+        }
+        frame.render_widget(log, log_layout);
+
+        let op = Paragraph::new("Op:").centered();
+        frame.render_widget(op, op_layout);
+
+        let footer = Paragraph::new("Next (Tab) | Up (↑) | Down (↓) | Select (Enter) | Exit (Esc)")
+            .centered();
         frame.render_widget(footer, footer_layout);
     }
 
     fn before_show(&mut self) -> std::io::Result<()> {
+        self.sslocal = SSLocalManager::find_sslocal()?;
         if self.sslocal.is_none() {
             let yes_no = YesNoMessageBoxLayer::new("Info", "sslocal not found, download it?")
                 .green()
@@ -129,6 +151,14 @@ impl Layer for MainLayer {
                                 .result
                                 .is_yes();
                         }
+                        KeyCode::Tab => {
+                            self.state = match self.state {
+                                State::Tab => State::Log,
+                                State::Log => State::Tab,
+                            };
+                        }
+                        KeyCode::Char('u') => {}
+                        KeyCode::Char('U') => self.sslocal_update()?,
                         _ => {}
                     }
                 }
