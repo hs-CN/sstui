@@ -73,12 +73,15 @@ impl SSLocalManager {
     pub fn find_sslocal() -> std::io::Result<Option<SSLocal>> {
         let mut dir = current_exe()?;
         dir.set_file_name("ss");
-        for entry in dir.read_dir()? {
-            let path = entry?;
-            if path.file_type()?.is_file() && path.file_name().to_string_lossy().contains("sslocal")
-            {
-                let sslocal = SSLocal::new(path.path())?;
-                return Ok(Some(sslocal));
+        if dir.exists() && dir.is_dir() {
+            for entry in dir.read_dir()? {
+                let path = entry?;
+                if path.file_type()?.is_file()
+                    && path.file_name().to_string_lossy().contains("sslocal")
+                {
+                    let sslocal = SSLocal::new(path.path())?;
+                    return Ok(Some(sslocal));
+                }
             }
         }
         Ok(None)

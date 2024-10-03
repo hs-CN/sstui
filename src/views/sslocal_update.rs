@@ -1,11 +1,8 @@
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
-    layout::{Constraint, Layout, Margin},
+    layout::{Constraint, Layout},
     style::{palette::tailwind::*, Style, Styled, Stylize},
-    widgets::{
-        HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
-        TableState,
-    },
+    widgets::{HighlightSpacing, Paragraph, Row, Table, TableState},
 };
 
 use super::{
@@ -26,7 +23,6 @@ pub struct SSLocalUpdateLayer {
     selected_style: Style,
     row_styles: [Style; 2],
     table_state: TableState,
-    scroll_state: ScrollbarState,
     pub result: Option<SSLocal>,
 }
 
@@ -44,15 +40,15 @@ impl SSLocalUpdateLayer {
             .map(|asset| format!("{:.2} MB", asset.size as f32 / 1024.0 / 1024.0))
             .collect();
         let longest_size_str_len = size_str_vec.iter().map(|s| s.len()).max().unwrap_or(0) as u16;
-        let row_str_vec = latest
+        let row_str_vec: Vec<_> = latest
             .assets
             .iter()
             .enumerate()
             .map(|(i, asset)| {
                 (
-                    format!("\n{}\n", asset.name),
-                    format!("\n{}\n", size_str_vec[i]),
-                    format!("\n{}\n", asset.browser_download_url),
+                    asset.name.clone(),
+                    size_str_vec[i].clone(),
+                    asset.browser_download_url.clone(),
                 )
             })
             .collect();
@@ -63,7 +59,6 @@ impl SSLocalUpdateLayer {
             Style::default().fg(WHITE).bg(GRAY.c900),
         ];
         let table_state = TableState::default().with_selected(0);
-        let scroll_state = ScrollbarState::new((latest.assets.len() - 1) * 3);
 
         Self {
             exit: false,
@@ -74,7 +69,6 @@ impl SSLocalUpdateLayer {
             selected_style,
             row_styles,
             table_state,
-            scroll_state,
             result: None,
         }
     }
@@ -100,7 +94,6 @@ impl Layer for SSLocalUpdateLayer {
             .map(|(i, (name, size, url))| {
                 Row::new([name.as_str(), size.as_str(), url.as_str()])
                     .set_style(self.row_styles[i % 2])
-                    .height(3)
             });
         let table = Table::new(
             rows,
@@ -112,22 +105,8 @@ impl Layer for SSLocalUpdateLayer {
         )
         .header(header)
         .highlight_style(self.selected_style)
-        .highlight_symbol(vec!["".into(), " █ ".into(), "".into()])
         .highlight_spacing(HighlightSpacing::Always);
         frame.render_stateful_widget(table, table_layout, &mut self.table_state);
-
-        let scrollbar = Scrollbar::default()
-            .orientation(ScrollbarOrientation::VerticalRight)
-            .begin_symbol(None)
-            .end_symbol(None);
-        frame.render_stateful_widget(
-            scrollbar,
-            table_layout.inner(Margin {
-                horizontal: 0,
-                vertical: 1,
-            }),
-            &mut self.scroll_state,
-        );
     }
 
     fn before_show(&mut self) -> std::io::Result<()> {
@@ -140,18 +119,8 @@ impl Layer for SSLocalUpdateLayer {
                 if key_event.kind == KeyEventKind::Press {
                     match key_event.code {
                         KeyCode::Esc => self.exit = true,
-                        KeyCode::Up => {
-                            self.table_state.select_previous();
-                            if let Some(i) = self.table_state.selected() {
-                                self.scroll_state = self.scroll_state.position(i * 3);
-                            }
-                        }
-                        KeyCode::Down => {
-                            self.table_state.select_next();
-                            if let Some(i) = self.table_state.selected() {
-                                self.scroll_state = self.scroll_state.position(i * 3);
-                            }
-                        }
+                        KeyCode::Up => self.table_state.select_previous(),
+                        KeyCode::Down => self.table_state.select_next(),
                         KeyCode::Enter => {
                             if let Some(i) = self.table_state.selected() {
                                 if self.latest.assets[i].name.ends_with(".zip")

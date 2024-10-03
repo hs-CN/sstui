@@ -114,6 +114,49 @@ impl MainLayer {
         }
         Ok(())
     }
+
+    fn stop_sslocal(&mut self) {
+        self.child_stop.store(true, Ordering::Relaxed);
+        if let Some(mut child) = self.child.take() {
+            child.kill().unwrap();
+        }
+    }
+
+    fn run_sslocal(&mut self, group_index: usize, server_index: usize) -> std::io::Result<()> {
+        let server = &self.userdata.server_groups[group_index].ss_servers[server_index];
+        if let Some(sslocal) = &self.sslocal {
+            match sslocal.run(server, self.userdata.local_port, self.userdata.lan_support) {
+                Ok(mut child) => {
+                    self.userdata.selected_server = Some((group_index, server_index));
+                    if child.stdout.is_some() {
+                        let mut reader = BufReader::new(child.stdout.take().unwrap());
+                        self.child_stop.store(false, Ordering::Relaxed);
+                        let child_stop = self.child_stop.clone();
+                        let logs = self.logs.clone();
+                        std::thread::spawn(move || loop {
+                            if child_stop.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            let mut buf = String::new();
+                            if let Ok(n) = reader.read_line(&mut buf) {
+                                if n > 0 {
+                                    *logs.write().unwrap() = buf;
+                                }
+                            }
+                        });
+                    }
+                    self.child = Some(child);
+                }
+                Err(err) => {
+                    MessageBoxLayer::new("Error", err.to_string())
+                        .red()
+                        .on_gray()
+                        .show()?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Layer for MainLayer {
@@ -293,10 +336,7 @@ impl Layer for MainLayer {
                                 .is_yes();
                             if self.exit {
                                 self.userdata.save()?;
-                                self.child_stop.store(true, Ordering::Relaxed);
-                                if let Some(child) = &mut self.child {
-                                    child.kill().unwrap();
-                                }
+                                self.stop_sslocal();
                             }
                         }
                         KeyCode::Tab => {
@@ -381,54 +421,13 @@ impl Layer for MainLayer {
                             State::Tab => {
                                 if self.show_group_index < self.userdata.server_groups.len() {
                                     if let Some(i) = self.table_state.selected() {
-                                        let selected_server = &self.userdata.server_groups
-                                            [self.show_group_index]
-                                            .ss_servers[i];
-                                        if let Some(sslocal) = &self.sslocal {
-                                            self.child_stop.store(true, Ordering::Relaxed);
-                                            if let Some(child) = &mut self.child {
-                                                child.kill().unwrap();
-                                            }
-
-                                            match sslocal.run(
-                                                selected_server,
-                                                self.userdata.local_port,
-                                                self.userdata.lan_support,
-                                            ) {
-                                                Ok(mut child) => {
-                                                    if child.stdout.is_some() {
-                                                        let mut reader = BufReader::new(
-                                                            child.stdout.take().unwrap(),
-                                                        );
-                                                        self.child_stop
-                                                            .store(false, Ordering::Relaxed);
-                                                        let child_stop = self.child_stop.clone();
-                                                        let logs = self.logs.clone();
-                                                        std::thread::spawn(move || loop {
-                                                            if child_stop.load(Ordering::Relaxed) {
-                                                                break;
-                                                            }
-                                                            let mut buf = String::new();
-                                                            if let Ok(n) =
-                                                                reader.read_line(&mut buf)
-                                                            {
-                                                                if n > 0 {
-                                                                    *logs.write().unwrap() = buf;
-                                                                }
-                                                            }
-                                                        });
-                                                    }
-                                                    self.child = Some(child);
-                                                    self.userdata.selected_server =
-                                                        Some((self.show_group_index, i))
-                                                }
-                                                Err(err) => {
-                                                    MessageBoxLayer::new("Error", err.to_string())
-                                                        .red()
-                                                        .on_gray()
-                                                        .show()?;
-                                                }
-                                            }
+                                        self.stop_sslocal();
+                                        if let Err(err) = self.run_sslocal(self.show_group_index, i)
+                                        {
+                                            MessageBoxLayer::new("Error", err.to_string())
+                                                .red()
+                                                .on_gray()
+                                                .show()?;
                                         }
                                     }
                                 }
